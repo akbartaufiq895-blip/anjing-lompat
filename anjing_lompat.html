@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dog Jump - Game Runner</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #1a1a1a;
+      color: #fff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    /* Container Utama Game */
+    .game-wrapper {
+      width: 600px;
+      background-color: #222;
+      border: 3px solid #444;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      overflow: hidden;
+    }
+
+    /* Topbar 5 Kolom Logo Status */
+    .logo-bar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      background-color: #111;
+      border-bottom: 2px solid #333;
+      padding: 10px 0;
+      text-align: center;
+    }
+
+    .logo-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-size: 11px;
+      color: #ccc;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* CSS Tambahan untuk Gambar Logo */
+    .logo-img {
+      width: 75px;
+      height: 75px;
+      object-fit: contain;
+      margin-bottom: 4px;
+    }
+
+    /* Canvas Area */
+    canvas {
+      display: block;
+      background-color: #70c5ce;
+    }
+
+    .instructions {
+      margin-top: 15px;
+      color: #aaa;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="game-wrapper">
+    <!-- 5 Kolom Logo Status Header dengan Gambar -->
+    <div class="logo-bar">
+      <div class="logo-item">
+        <img src="1.jpeg" alt="Logo Karakter" class="logo-img">
+        <span></span>
+      </div>
+      <div class="logo-item">
+        <img src="2.jpeg" alt="Logo Tulang" class="logo-img">
+        <span></span>
+      </div>
+      <div class="logo-item">
+        <img src="3.jpeg" alt="Logo Kecepatan" class="logo-img">
+        <span></span>
+      </div>
+      <div class="logo-item">
+        <img src="4.jpeg" alt="Logo Skor" class="logo-img">
+        <span></span>
+      </div>
+      <div class="logo-item">
+        <img src="5.jpeg" alt="Logo Status" class="logo-img">
+        <span></span>
+      </div>
+    </div>
+
+    <!-- Canvas Game -->
+    <canvas id="gameCanvas" width="600" height="220"></canvas>
+  </div>
+
+  <div class="instructions">
+    Tekan <b>Spasi</b> atau <b>Klik Area Game</b> untuk Melompat
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Variabel Kontrol Game
+    let score = 0;
+    let gameOver = false;
+    let gameSpeed = 5;
+    let frameCount = 0;
+    let obstacles = [];
+
+    // Audio Synthesizer 
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playJumpSound() {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    // Objek Anjing
+    const dog = {
+      x: 50,
+      y: 150,
+      width: 36,
+      height: 30,
+      gravity: 0.6,
+      lift: -9.5,
+      velocity: 0,
+      isJumping: false,
+
+      draw() {
+        ctx.fillStyle = '#c2410c';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillRect(this.x + 20, this.y - 10, 16, 16);
+        ctx.fillStyle = '#7c2d12';
+        ctx.fillRect(this.x + 18, this.y - 12, 6, 8);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(this.x + 28, this.y - 8, 4, 4);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(this.x + 30, this.y - 8, 2, 2);
+        ctx.fillStyle = '#c2410c';
+        ctx.fillRect(this.x - 6, this.y + 4, 8, 4);
+        ctx.fillStyle = '#7c2d12';
+        if (this.isJumping) {
+          ctx.fillRect(this.x + 4, this.y + this.height, 6, 4);
+          ctx.fillRect(this.x + 24, this.y + this.height, 6, 4);
+        } else {
+          const legOffset = (Math.floor(frameCount / 6) % 2) * 4;
+          ctx.fillRect(this.x + 6 + legOffset, this.y + this.height, 6, 8);
+          ctx.fillRect(this.x + 22 - legOffset, this.y + this.height, 6, 8);
+        }
+      },
+
+      update() {
+        this.velocity += this.gravity;
+        this.y += this.velocity;
+        if (this.y > 150) {
+          this.y = 150;
+          this.velocity = 0;
+          this.isJumping = false;
+        }
+      },
+
+      jump() {
+        if (!this.isJumping) {
+          this.velocity = this.lift;
+          this.isJumping = true;
+          playJumpSound();
+        }
+      }
+    };
+
+    // Rintangan
+    class Obstacle {
+      constructor() {
+        this.x = canvas.width;
+        this.width = 18;
+        this.height = 32;
+        this.y = 180 - this.height;
+      }
+
+      draw() {
+        ctx.fillStyle = '#b91c1c';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillStyle = '#7f1d1d';
+        ctx.fillRect(this.x + 3, this.y, 4, this.height);
+      }
+
+      update() {
+        this.x -= gameSpeed;
+      }
+    }
+
+    // Input Handling
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (gameOver) resetGame();
+        else dog.jump();
+      }
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (gameOver) resetGame();
+      else dog.jump();
+    });
+
+    canvas.addEventListener('click', () => {
+      if (gameOver) resetGame();
+      else dog.jump();
+    });
+
+    function resetGame() {
+      obstacles = [];
+      score = 0;
+      gameSpeed = 5;
+      gameOver = false;
+      dog.y = 150;
+      dog.velocity = 0;
+      animate();
+    }
+
+    // Main Loop
+    function animate() {
+      if (gameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 10);
+        ctx.font = '14px Arial';
+        ctx.fillText('Tekan Spasi / Klik untuk Memulai Lagi', canvas.width / 2, canvas.height / 2 + 20);
+        return;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#15803d'; 
+      ctx.fillRect(0, 188, canvas.width, 32);
+      ctx.fillStyle = '#854d0e'; 
+      ctx.fillRect(0, 194, canvas.width, 26);
+
+      dog.update();
+      dog.draw();
+
+      frameCount++;
+      if (frameCount % Math.max(60, 120 - Math.floor(score / 2)) === 0) {
+        obstacles.push(new Obstacle());
+      }
+
+      for (let i = 0; i < obstacles.length; i++) {
+        obstacles[i].update();
+        obstacles[i].draw();
+
+        if (
+          dog.x < obstacles[i].x + obstacles[i].width &&
+          dog.x + dog.width > obstacles[i].x &&
+          dog.y < obstacles[i].y + obstacles[i].height &&
+          dog.y + dog.height > obstacles[i].y
+        ) {
+          gameOver = true;
+        }
+
+        if (obstacles[i].x + obstacles[i].width < 0) {
+          obstacles.splice(i, 1);
+          score += 10;
+          i--;
+
+          if (score % 50 === 0) {
+            gameSpeed += 0.4;
+          }
+        }
+      }
+
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 16px Arial';
+      ctx.textAlign = 'right';
+      ctx.fillText('Skor: ' + score, canvas.width - 15, 30);
+
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
